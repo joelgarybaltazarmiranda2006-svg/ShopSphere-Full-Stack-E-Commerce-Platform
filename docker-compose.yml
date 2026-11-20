@@ -1,0 +1,70 @@
+services:
+  db:
+    image: mysql:8.0
+    container_name: shopsphere-db
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root1234}
+      MYSQL_DATABASE: ecomdb
+    volumes:
+      - db_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - shopsphere-net
+
+  backend:
+    build:
+      context: ./Ecommerce-Backend
+    image: shopsphere-backend:latest
+    container_name: shopsphere-backend
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/ecomdb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root1234}
+      SPRING_DATASOURCE_DRIVER_CLASS_NAME: com.mysql.cj.jdbc.Driver
+      SPRING_JPA_HIBERNATE_DDL_AUTO: update
+      SPRING_H2_CONSOLE_ENABLED: "false"
+      # Evita duplicar los productos de data1.sql en cada despliegue
+      SPRING_SQL_INIT_MODE: never
+      SPRING_SERVLET_MULTIPART_MAX_FILE_SIZE: 10MB
+      SPRING_SERVLET_MULTIPART_MAX_REQUEST_SIZE: 10MB
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/api/products"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 40s
+    restart: unless-stopped
+    networks:
+      - shopsphere-net
+
+  frontend:
+    build:
+      context: ./Ecommerce-Frontend
+    image: shopsphere-frontend:latest
+    container_name: shopsphere-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    restart: unless-stopped
+    networks:
+      - shopsphere-net
+
+volumes:
+  db_data:
+
+networks:
+  shopsphere-net:
+    driver: bridge
