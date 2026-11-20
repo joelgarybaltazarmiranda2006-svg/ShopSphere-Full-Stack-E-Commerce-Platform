@@ -1,0 +1,48 @@
+name: CI/CD ShopSphere
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Pruebas del backend (contenedor efimero)
+        run: |
+          mkdir -p "$HOME/.m2-ci"
+          docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp \
+            -v "$PWD/Ecommerce-Backend":/app \
+            -v "$HOME/.m2-ci":/tmp/m2 \
+            -w /app \
+            maven:3.9-eclipse-temurin-21 \
+            mvn -B -Dmaven.repo.local=/tmp/m2 test
+
+  build:
+    needs: test
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compilar imagenes Docker
+        run: docker compose build
+
+  deploy:
+    needs: build
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Levantar / actualizar contenedores
+        run: docker compose up -d --remove-orphans
+
+      - name: Estado de los servicios
+        run: docker compose ps
+
+      - name: Limpiar imagenes antiguas
+        run: docker image prune -f
